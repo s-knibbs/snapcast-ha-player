@@ -1,0 +1,21 @@
+name: Validation
+
+on:
+  push:
+    branches:
+      - main
+  
+  pull_request:
+    branches: '*'
+
+jobs:
+  validate_hacs:
+    runs-on: "ubunutu-latest"
+    steps:
+      - uses: "actions/checkout@v2"
+      - name: HACS Action
+        uses: hacs/action@main
+        with:
+          category: integration
+      - name: Hassfest validation
+        uses: "home-assistant/actions/hassfest@master"
