@@ -3,7 +3,7 @@ Simple integration designed to allow TTS playback through a [snapcast](https://m
 
 ## Installation
 
-Install via HACS or copy `./custom_components/snapcast_player/` to `/config/custom_components/braviatv_psk/`
+Install via HACS or copy `./custom_components/snapcast_player/` to `/config/custom_components/`
 
 ## Configuration Variables
 
@@ -13,6 +13,7 @@ Install via HACS or copy `./custom_components/snapcast_player/` to `/config/cust
 |host     | yes      | `127.0.0.1`       | Hostname or IP address of the snapcast server |
 | port    | no       | `4953`            | Port to stream audio to, default is `4953` |
 | start_delay | no   | `1s`              | Insert a delay at the stream start. Useful to prevent TTS from being slightly cut-off |
+| start_delay_template | no |            | Add a dynamic delay, for example to allow time for a speaker to turn on |
 
 ## Example Config
 
