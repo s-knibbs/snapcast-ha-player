@@ -50,9 +50,9 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     }
 )
 METADATA_REGEXES = (
-    re.compile(r'^(TITLE)=(.+)$', re.MULTILINE),
-    re.compile(r'^(ARTIST)=(.+)$', re.MULTILINE),
-    re.compile(r'^(ALBUM)=(.+)$', re.MULTILINE)
+    re.compile(r'^(TITLE)=(.+)$', re.MULTILINE | re.IGNORECASE),
+    re.compile(r'^(ARTIST)=(.+)$', re.MULTILINE | re.IGNORECASE),
+    re.compile(r'^(ALBUM)=(.+)$', re.MULTILINE | re.IGNORECASE)
 )
 TITLE_REGEXES = (
     re.compile(r'^StreamTitle=(.+)$', re.MULTILINE),
@@ -270,7 +270,6 @@ class SnapcastPlayer(MediaPlayerEntity):
         if self._proc is not None and self._proc.returncode is None:
             self._attr_state = MediaPlayerState.PAUSED if self._is_stopped else MediaPlayerState.PLAYING
             self._media_info = await self._get_metadata()
-            _LOGGER.debug(f"Currently playing: {self._media_info}")
         else:
             self._media_info = None
             self._attr_state = MediaPlayerState.IDLE
