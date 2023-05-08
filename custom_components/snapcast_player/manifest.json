@@ -3,7 +3,7 @@
     "name": "Snapcast Player",
     "documentation": "https://github.com/s-knibbs/snapcast-ha-player",
     "issue_tracker": "https://github.com/s-knibbs/snapcast-ha-player/issues",
-    "requirements": [],
+    "requirements": ["m3u8"],
     "dependencies": [],
     "codeowners": ["@s-knibbs"],
     "version": "0.1.0",
