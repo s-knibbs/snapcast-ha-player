@@ -1,6 +1,5 @@
 from __future__ import annotations
 import asyncio
-import logging
 import os.path
 import re
 import signal
@@ -28,7 +27,14 @@ from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.reload import setup_reload_service
 from homeassistant.util.dt import utcnow
 
-from .const import CONF_START_DELAY, CONF_HOST, CONF_NAME, CONF_PORT, DEFAULT_PORT, DOMAIN
+from .const import (
+    CONF_START_DELAY,
+    CONF_HOST,
+    CONF_NAME,
+    CONF_PORT,
+    DEFAULT_PORT,
+    DOMAIN,
+)
 
 if TYPE_CHECKING:
     from asyncio.subprocess import Process
@@ -51,7 +57,10 @@ METADATA_REGEXES = (
     re.compile(r"^(ARTIST)=(.+)$", re.MULTILINE | re.IGNORECASE),
     re.compile(r"^(ALBUM)=(.+)$", re.MULTILINE | re.IGNORECASE),
 )
-TITLE_REGEXES = (re.compile(r"^StreamTitle=(.+)$", re.MULTILINE), re.compile(r"^icy-name=(.+)$", re.MULTILINE))
+TITLE_REGEXES = (
+    re.compile(r"^StreamTitle=(.+)$", re.MULTILINE),
+    re.compile(r"^icy-name=(.+)$", re.MULTILINE),
+)
 DURATION_REGEX = re.compile(r"^ {2}Duration: ([\d:.]+),", re.MULTILINE)
 PROGRESS_REGEX = re.compile(r"time=(\d{2}:\d{2}:\d{2}\.\d{2})")
 
@@ -97,7 +106,6 @@ def setup_platform(
 
 
 async def parse_playlist(hass: HomeAssistant, url: str) -> PlaylistInfo:
-    # TODO: Support album art with #EXTIMG
     dirname = os.path.dirname(url)
     if url.startswith("/media/local"):
         url = url.replace("/local", "", 1)
@@ -171,6 +179,7 @@ class SnapcastPlayer(MediaPlayerEntity):
         else:
             media_id = async_process_play_media_url(self.hass, media_id)
             self._uri = media_id
+            self._attr_media_image_url = None
 
         # Already playing, terminate existing process
         if self._proc is not None and self._proc.returncode is None:
@@ -292,7 +301,16 @@ class SnapcastPlayer(MediaPlayerEntity):
     async def _start_playback(self, position: float | None = None) -> Process:
         if self._uri is None:
             raise ValueError("No URI set")
-        format_args = ["-f", "u16le", "-acodec", "pcm_s16le", "-ac", "2", "-ar", "48000"]
+        format_args = [
+            "-f",
+            "u16le",
+            "-acodec",
+            "pcm_s16le",
+            "-ac",
+            "2",
+            "-ar",
+            "48000",
+        ]
         delay_args = [] if self._start_delay is None else ["-af", f"adelay={self._start_delay}:all=true"]
         if self._host.startswith("/"):
             out_arg = self._host
@@ -301,7 +319,16 @@ class SnapcastPlayer(MediaPlayerEntity):
         seek_args = ["-ss", str(timedelta(seconds=position))[:-4]] if position else []
         self._seek_position = position
         proc = await asyncio.create_subprocess_exec(
-            *["ffmpeg", "-y", *seek_args, "-i", self._uri, *format_args, *delay_args, out_arg],
+            *[
+                "ffmpeg",
+                "-y",
+                *seek_args,
+                "-i",
+                self._uri,
+                *format_args,
+                *delay_args,
+                out_arg,
+            ],
             stderr=asyncio.subprocess.PIPE,
             limit=64 * 1024 * 1024,
             close_fds=True,
