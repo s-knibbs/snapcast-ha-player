@@ -17,7 +17,7 @@ def is_audio_file(filename: str) -> bool:
 
 def main():
     for path, _, files in os.walk(sys.argv[1]):
-        playlist_items = [file for file in files if is_audio_file(file)]
+        playlist_items = sorted([file for file in files if is_audio_file(file)])
         image_files = [file for file in files if file.endswith(".jpg")]
         if len(playlist_items) < 2:
             continue

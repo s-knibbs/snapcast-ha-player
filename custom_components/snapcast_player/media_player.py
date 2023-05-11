@@ -4,9 +4,11 @@ import os.path
 import re
 import signal
 from asyncio import IncompleteReadError
+from asyncio.subprocess import PIPE
 from dataclasses import dataclass
 from datetime import time, timedelta as delta, timedelta
 from typing import TYPE_CHECKING, Any
+from urllib.parse import unquote
 
 import m3u8
 import voluptuous as vol
@@ -16,6 +18,7 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 import homeassistant.helpers.config_validation as cv
 from homeassistant.components import media_source
 from homeassistant.components.media_player import (
+    ATTR_MEDIA_ANNOUNCE,
     PLATFORM_SCHEMA,
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
@@ -63,6 +66,7 @@ TITLE_REGEXES = (
 )
 DURATION_REGEX = re.compile(r"^ {2}Duration: ([\d:.]+),", re.MULTILINE)
 PROGRESS_REGEX = re.compile(r"time=(\d{2}:\d{2}:\d{2}\.\d{2})")
+BUF_SIZE = 64 * 1024 * 1024
 
 
 @dataclass
@@ -70,7 +74,6 @@ class MediaInfo:
     title: str
     artist: str | None = None
     album: str | None = None
-    duration: int | None = None
 
 
 @dataclass
@@ -160,34 +163,34 @@ class SnapcastPlayer(MediaPlayerEntity):
         self._seek_position: float | None = None
 
     async def async_play_media(self, media_type: MediaType | str, media_id: str, **kwargs: Any) -> None:
-        # TODO: Support announce
         # TODO: Support queuing items
         if media_source.is_media_source_id(media_id):
             sourced_media = await media_source.async_resolve_media(self.hass, media_id, self.entity_id)
             media_id = sourced_media.url
 
+        if kwargs.get(ATTR_MEDIA_ANNOUNCE):
+            is_live_content = self.media_duration is None
+            self._proc = await self._start_playback(media_id, announcement=True)
+            self.hass.async_create_task(self._on_announcement_complete(is_live_content))
+            return
+
         self._queue = []
+        self._attr_media_image_url = None
         if media_id.endswith(".m3u8") or media_id.endswith(".m3u"):
             playlist = await parse_playlist(self.hass, media_id)
             if not playlist.items:
                 return
             for item in playlist.items:
-                self._queue.append(async_process_play_media_url(self.hass, item))
+                self._queue.append(item)
             self._uri = self._queue[0]
             if playlist.album_art:
                 self._attr_media_image_url = async_process_play_media_url(self.hass, playlist.album_art)
         else:
-            media_id = async_process_play_media_url(self.hass, media_id)
             self._uri = media_id
-            self._attr_media_image_url = None
 
-        # Already playing, terminate existing process
-        if self._proc is not None and self._proc.returncode is None:
-            self._proc.terminate()
-            self._is_stopped = False
-
-        self._proc = await self._start_playback()
-        self.hass.async_create_task(self._on_process_complete())
+        if self._uri:
+            self._proc = await self._start_playback(self._uri)
+            self.hass.async_create_task(self._on_process_complete())
 
     @property
     def _next_track(self) -> str | None:
@@ -199,6 +202,16 @@ class SnapcastPlayer(MediaPlayerEntity):
                 pass
         return None
 
+    async def _on_announcement_complete(self, is_live_content: bool):
+        if self._proc is not None and self._proc.returncode is None:
+            await self._proc.wait()
+        if self._uri:
+            self._proc = await self._start_playback(
+                self._uri,
+                position=None if is_live_content else self._attr_media_position,
+            )
+            self.hass.async_create_task(self._on_process_complete())
+
     async def _on_process_complete(self):
         while True:
             returncode = await self._proc.wait()
@@ -208,7 +221,8 @@ class SnapcastPlayer(MediaPlayerEntity):
                 return
             if self._next_track:
                 self._uri = self._next_track
-            self._proc = await self._start_playback()
+            if self._uri:
+                self._proc = await self._start_playback(self._uri)
 
     @property
     def _previous_track(self) -> str | None:
@@ -223,26 +237,23 @@ class SnapcastPlayer(MediaPlayerEntity):
         return None
 
     async def async_media_seek(self, position: float) -> None:
-        if self._proc is not None and self._proc.returncode is None:
-            self._proc.terminate()
-        self._proc = await self._start_playback(position)
-        self.hass.async_create_task(self._on_process_complete())
+        if self._uri:
+            self._proc = await self._start_playback(self._uri, position)
+            self.hass.async_create_task(self._on_process_complete())
 
     async def async_media_next_track(self) -> None:
-        if self._proc and self._proc.returncode is None:
-            self._proc.terminate()
         if self._next_track:
             self._uri = self._next_track
-        self._proc = await self._start_playback()
-        self.hass.async_create_task(self._on_process_complete())
+        if self._uri:
+            self._proc = await self._start_playback(self._uri)
+            self.hass.async_create_task(self._on_process_complete())
 
     async def async_media_previous_track(self) -> None:
-        if self._proc and self._proc.returncode is None:
-            self._proc.terminate()
         if self._previous_track:
             self._uri = self._previous_track
-        self._proc = await self._start_playback()
-        self.hass.async_create_task(self._on_process_complete())
+        if self._uri:
+            self._proc = await self._start_playback(self._uri)
+            self.hass.async_create_task(self._on_process_complete())
 
     async def _get_metadata(self) -> MediaInfo | None:
         if self._uri is None:
@@ -250,13 +261,13 @@ class SnapcastPlayer(MediaPlayerEntity):
         proc = await asyncio.create_subprocess_exec(
             "ffmpeg",
             "-i",
-            self._uri,
+            async_process_play_media_url(self.hass, self._uri),
             "-f",
             "ffmetadata",
             "-",
-            stderr=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            limit=64 * 1024 * 1024,
+            stderr=PIPE,
+            stdout=PIPE,
+            limit=BUF_SIZE,
             close_fds=True,
         )
         stdout, stderr = await proc.communicate()
@@ -266,6 +277,7 @@ class SnapcastPlayer(MediaPlayerEntity):
             duration = None
             if match := DURATION_REGEX.search(stream_info):
                 duration = to_seconds(match.group(1))
+            self._attr_media_duration = duration
             metadata = stdout.decode("utf-8")
             details = {}
             for regex in METADATA_REGEXES:
@@ -273,12 +285,14 @@ class SnapcastPlayer(MediaPlayerEntity):
                     details[match.group(1).lower()] = match.group(2)
             if details:
                 try:
-                    return MediaInfo(duration=duration, **details)
+                    return MediaInfo(**details)
                 except TypeError:
                     pass
             for title_regex in TITLE_REGEXES:
                 if match := title_regex.search(metadata):
-                    return MediaInfo(match.group(1), duration=duration)
+                    return MediaInfo(match.group(1))
+            if self._uri.startswith("/media/local"):
+                return MediaInfo(unquote(os.path.splitext(os.path.basename(self._uri))[0]))
         return None
 
     async def _read_ffmpeg_progress(self):
@@ -298,9 +312,11 @@ class SnapcastPlayer(MediaPlayerEntity):
                 self._attr_media_position = None
                 return
 
-    async def _start_playback(self, position: float | None = None) -> Process:
-        if self._uri is None:
-            raise ValueError("No URI set")
+    async def _start_playback(self, uri: str, position: float | None = None, announcement: bool = False) -> Process:
+        if self._proc and self._proc.returncode is None:
+            self._proc.terminate()
+            self._is_stopped = False
+
         format_args = [
             "-f",
             "u16le",
@@ -316,33 +332,25 @@ class SnapcastPlayer(MediaPlayerEntity):
             out_arg = self._host
         else:
             out_arg = f"tcp://{self._host}:{self._port}"
-        seek_args = ["-ss", str(timedelta(seconds=position))[:-4]] if position else []
+        seek_args = ["-ss", str(timedelta(seconds=round(position)))] if position else []
         self._seek_position = position
-        proc = await asyncio.create_subprocess_exec(
-            *[
-                "ffmpeg",
-                "-y",
-                *seek_args,
-                "-i",
-                self._uri,
-                *format_args,
-                *delay_args,
-                out_arg,
-            ],
-            stderr=asyncio.subprocess.PIPE,
-            limit=64 * 1024 * 1024,
-            close_fds=True,
-        )
+        process_args = [
+            "ffmpeg",
+            "-y",
+            *seek_args,
+            "-i",
+            async_process_play_media_url(self.hass, uri),
+            *format_args,
+            *delay_args,
+            out_arg,
+        ]
+        proc = await asyncio.create_subprocess_exec(*process_args, stderr=PIPE, limit=BUF_SIZE, close_fds=True)
         self._attr_state = MediaPlayerState.PLAYING
-        self._is_stopped = False
-        self._attr_media_position = round(self._seek_position) if self._seek_position else 0
-        self._attr_media_position_updated_at = utcnow()
-        self.hass.async_create_task(self._read_ffmpeg_progress())
+        if not announcement:
+            self._attr_media_position = round(self._seek_position) if self._seek_position else 0
+            self._attr_media_position_updated_at = utcnow()
+            self.hass.async_create_task(self._read_ffmpeg_progress())
         return proc
-
-    @property
-    def media_duration(self) -> int | None:
-        return self._media_info is not None and self._media_info.duration
 
     @property
     def media_artist(self) -> str | None:
@@ -360,7 +368,11 @@ class SnapcastPlayer(MediaPlayerEntity):
             self._attr_state = MediaPlayerState.PAUSED if self._is_stopped else MediaPlayerState.PLAYING
             self._media_info = await self._get_metadata()
         else:
+            self._is_stopped = False
             self._media_info = None
+            self._attr_media_position = None
+            self._attr_media_duration = None
+            self._attr_repeat = RepeatMode.OFF
             self._attr_state = MediaPlayerState.IDLE
             self._attr_media_image_url = None
 
@@ -380,10 +392,7 @@ class SnapcastPlayer(MediaPlayerEntity):
         if self._proc is not None:
             self._queue = []
             self._proc.terminate()
-            self._attr_repeat = RepeatMode.OFF
-            self._attr_state = MediaPlayerState.IDLE
-            self._attr_media_image_url = None
-            self._is_stopped = False
+            self.hass.create_task(self.async_update())
 
     def media_pause(self) -> None:
         if self._proc is not None and self._proc.returncode is None:
