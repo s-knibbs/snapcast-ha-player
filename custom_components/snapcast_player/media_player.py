@@ -168,7 +168,7 @@ class SnapcastPlayer(MediaPlayerEntity):
             sourced_media = await media_source.async_resolve_media(self.hass, media_id, self.entity_id)
             media_id = sourced_media.url
 
-        if kwargs.get(ATTR_MEDIA_ANNOUNCE):
+        if kwargs.get(ATTR_MEDIA_ANNOUNCE) and self._attr_state == MediaPlayerState.PLAYING:
             is_live_content = self.media_duration is None
             self._proc = await self._start_playback(media_id, announcement=True)
             self.hass.async_create_task(self._on_announcement_complete(is_live_content))
