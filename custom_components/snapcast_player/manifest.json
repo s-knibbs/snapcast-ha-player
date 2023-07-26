@@ -1,11 +1,11 @@
 {
     "domain": "snapcast_player",
     "name": "Snapcast Player",
-    "documentation": "https://github.com/s-knibbs/snapcast-ha-player",
-    "issue_tracker": "https://github.com/s-knibbs/snapcast-ha-player/issues",
-    "requirements": [],
-    "dependencies": [],
     "codeowners": ["@s-knibbs"],
-    "version": "0.1.0",
-    "iot_class": "local_push"
+    "dependencies": [],
+    "documentation": "https://github.com/s-knibbs/snapcast-ha-player",
+    "iot_class": "local_push",
+    "issue_tracker": "https://github.com/s-knibbs/snapcast-ha-player/issues",
+    "requirements": ["m3u8"],
+    "version": "0.1.0"
 }
