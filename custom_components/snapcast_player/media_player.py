@@ -273,12 +273,12 @@ class SnapcastPlayer(MediaPlayerEntity):
         stdout, stderr = await proc.communicate()
         # Parse the ffmpeg output
         if proc.returncode == 0:
-            stream_info = stderr.decode("utf-8")
+            stream_info = stderr.decode("utf-8", errors="ignore")
             duration = None
             if match := DURATION_REGEX.search(stream_info):
                 duration = to_seconds(match.group(1))
             self._attr_media_duration = duration
-            metadata = stdout.decode("utf-8")
+            metadata = stdout.decode("utf-8", errors="ignore")
             details = {}
             for regex in METADATA_REGEXES:
                 if match := regex.search(metadata):
@@ -302,7 +302,7 @@ class SnapcastPlayer(MediaPlayerEntity):
                     data = await self._proc.stderr.readuntil(b"\r")
                 except IncompleteReadError:
                     return
-                if match := PROGRESS_REGEX.search(data.decode("utf-8")):
+                if match := PROGRESS_REGEX.search(data.decode("utf-8", errors="ignore")):
                     position = to_seconds(match.group(1))
                     if self._seek_position:
                         position += round(self._seek_position)
