@@ -1,4 +1,7 @@
 # Snapcast Player Home Assistant Integration
+
+⚠️ **Unfortunately, due to health issues I will not be able to maintain this integration in future, so your YMMV** ⚠️
+
 Simple integration designed to allow playback through a [snapcast](https://mjaggard.github.io/snapcast/) server (the built in [snapcast integration](https://www.home-assistant.io/integrations/snapcast/) doesn't support audio playback).
 Audio is streamed to snapcast using ffmpeg, which is preinstalled on HassOS.
 
